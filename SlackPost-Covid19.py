@@ -15,8 +15,12 @@ import os
 import socket
 import configparser
 import xml.etree.ElementTree as ET
+import matplotlib.pyplot as plt
+import numpy as np
+import matplotlib.font_manager as fm
 from slack_sdk.errors import SlackApiError
 from slack_sdk import WebClient            # requires: pip install slack_sdk
+
 
 class SystemInfo:
     def system_info():
@@ -38,11 +42,13 @@ class SystemInfo:
             case 4:
                 format = '%Y%m%d%H%M%S'             # yyyyMMddHHmmss
             case 5:
+                format = '%Y년 %m월 %d일'            # yyyy년 MM월 dd일
+            case 5:
                 format = '%Y년%m월%d일 %H시%M분%S초' # yyyy년MM월dd일 HH시mm분ss초
             case _:
                 format = '%Y%m%d%H%M%S'
-        datetime_format = dates.strftime(format)
-        return datetime_format
+        formatted = dates.strftime(format)
+        return formatted
 
 
 class ReadConfig:
@@ -92,7 +98,7 @@ class FileAPI:
 
     def find_file(self, dates, file_path):
         if not os.path.isfile(file_path):
-            response_body = Covid19API.request_(self.Covid19, dates)
+            response_body = Covid19API.http_get(self.Covid19, dates)
             self.save_xml(file_path, response_body)
         else:
             print('Xml file exists. : ' + file_path)
@@ -121,27 +127,28 @@ class Covid19API:
         })
         return params
         
-    def request_(self, dates) :
-        request = r.Request(self.url + self.set_covid19uri(dates))
-        request.get_method = lambda: 'GET'
-        response = r.urlopen(request)
+    def http_get(self, params):
+        try:
+            request = r.Request(self.url + self.set_covid19uri(params))
+            request.get_method = lambda: 'GET'
+            response = r.urlopen(request)
 
-        # FIXME: 여러번 request할 때의 로직 수정 필요, Concurrent GET request, list of_urls
-        # status 200 OK (성공, Success)
-        if response.status == 200:
-            # response = r.urlopen(request).read().decode("utf-8")
-            response_body = response.read()
-            return response_body
-            # print('response.url : ' + response.url) # redirection url
-            # print(response.headers) # Date, Server, Content-Length, Connection, Content-Type
-        else:
-            print('status = ' + str(response.status) + ' error')
+            # FIXME: 여러번 request할 때의 로직 수정 필요, Concurrent GET request, list of_urls
+            if response.status == 200:
+                response_body = response.read()
+                return response_body
+                # print('response.url : ' + response.url) # redirection url
+                # print(response.headers) # Date, Server, Content-Length, Connection, Content-Type
+        except Exception as e:
+            print(e)
 
 
 class ReadXmlData:
     def __init__(self, file_list):
-        self.stdDayList = [] # 기준일자
-        self.defCntList = [] # 일별확진자수
+        self.stdDayList = []    # 기준일자
+        self.incDecList = []    # 전일대비확진자증감수
+        self.isolClearList = [] # 누적격리해제수
+        self.incheon = []       # 인천
         self.file_list = file_list
     
     def parse_data(self):
@@ -150,46 +157,81 @@ class ReadXmlData:
             tree = ET.parse(file)
             root = tree.getroot()
             result_code = root.find('header/resultCode').text
-            incheon = root.find('body/items/item/incDec').text # TODO: 수정 필요
+            sido = 'Incheon'
+            try:
+                for data in root.findall('body/items/item'):
+                    if result_code == '00' and (data.findtext('gubunEn') == 'Total'):
+                        dict['누적확진자수'] = data.findtext('defCnt')
+                        dict['시도명'] = data.findtext('gubun')
+                        dict['시도명(영문)'] = data.findtext('gubunEn')
+                        dict['전일대비확진자증감수'] = data.findtext('incDec')
+                        # dict['누적격리해제수'] = data.findtext('isolClearCnt') # 데이터가 0만 들어옴
+                        # dict['격리중환자수'] = data.findtext('isolIngCnt') # 데이터가 0만 들어옴
+                        dict['지역발생수'] = data.findtext('localOccCnt')
+                        dict['해외유입수'] = data.findtext('overFlowCnt')
+                        # dict['10만명당발생율'] = data.findtext('qurRate')
+                        dict['기준일자'] = data.findtext('stdDay')
+                        dict['사망자수'] = data.findtext('deathCnt')
+                        
+                        self.stdDayList.append(dict['기준일자'])
+                        self.incDecList.append(dict['전일대비확진자증감수'])
+                        self.isolClearList.append(dict['사망자수'])
+                        
+                        print(dict['사망자수'])
+                        
+                    if result_code == '00' and (data.findtext('gubunEn') == sido):
+                        incDec = data.find('incDec').text
+                        date = data.find('stdDay').text
+                
+            except Exception as e:
+                raise e
+        return self.stdDayList, self.incDecList, self.isolClearList
 
-            for object in root.iter('item'):
-                if result_code == '00' and (object.findtext('gubunEn') == 'Total'):
-                    dict['누적확진자수'] = object.findtext('defCnt')
-                    dict['시도명'] = object.findtext('gubun')
-                    dict['시도명(영문)'] = object.findtext('gubunEn')
-                    dict['전일대비확진자증감수'] = object.findtext('incDec')
-                    dict['누적격리해제수'] = object.findtext('isolClearCnt')
-                    dict['격리중환자수'] = object.findtext('isolIngCnt')
-                    dict['지역발생수'] = object.findtext('localOccCnt')
-                    dict['해외유입수'] = object.findtext('overFlowCnt')
-                    dict['10만명당발생율'] = object.findtext('qurRate')
-                    dict['기준일자'] = object.findtext('stdDay')
-                    dict['사망자수'] = object.findtext('deathCnt')
-                    
-                    self.stdDayList.append(dict['기준일자'])
-                    self.defCntList.append(dict['누적확진자수'])
 
-                else:
-                    raise Exception('%s 파일의 resultCode가 00이 아닙니다! \n' % file)
+class ChartAPI:
+    def __init__(self):
+        self.today = SystemInfo.datetime_format(date.today(), 5)
+        # matplotlib 한글깨짐 방지
+        font_list = [font.name for font in fm.fontManager.ttflist]
+        if 'Malgun Gothic' in font_list:
+            plt.rcParams['font.family'] = 'Malgun Gothic' # Windows OS
+        elif 'NanumGothic' in font_list:
+            plt.rcParams['font.family'] = 'NanumGothic'
+        else:
+            plt.rcParams['font.family'] = 'AppleGothic' # Mac OS
+        plt.rcParams['axes.unicode_minus'] = False # (-) 부호 깨짐 현상 방지
         
-        return self.stdDayList, self.defCntList
-
-class CreateChart:
-    # matplotlib 모듈 사용하여 데이터 시각화
-    import matplotlib.pyplot as plt
-    import numpy as np
-    import matplotlib.font_manager as fm
-
-    # 한글 깨짐 해결
-    font_list = [font.name for font in fm.fontManager.ttflist]
-    if 'Malgun Gothic' in font_list:
-        # Windows OS의 경우 폰트 설정
-        plt.rcParams['font.family'] = 'Malgun Gothic' # 맑은고딕 폰트
-    elif 'NanumGothic' in font_list:
-        plt.rcParams['font.family'] = 'NanumGothic' # 나눔고딕 폰트
-    # Mac OS의 경우 폰트 설정
-    else:
-        plt.rcParams['font.family'] = 'AppleGothic' # Apple Gothic
+        
+    def create_chart(self, stdDayList, incDecList, isolClearList):
+        idx_List = list(range(len(stdDayList)))
+        inc_dec = list(map(int, incDecList))
+        isol_clear = list(map(int, isolClearList))
+        
+        plt.figure(figsize = (10,5)) # 그래프 크기 지정
+        plt.title('한국 코로나19 감염 및 완치 추이 ' + self.today, fontsize = 16, color = 'navy')
+        plt.xlabel('기준일자', fontsize = 13)
+        plt.ylabel('확진자수', fontsize = 13)
+        
+        # 선 그래프 그리기, 선 스타일 지정, 범례 추가
+        plt.plot(idx_List, inc_dec, linewidth = 3, color='hotpink', label = '확진자 수 추이',
+                # 표식 추가, 표식 스타일 지정
+                marker = 'o', markersize = 6, markeredgecolor = 'hotpink', markerfacecolor = 'white')
+        plt.plot(idx_List, isol_clear, linewidth = 3, color='blue', label = '격리해제 수 추이',
+                marker = 'o', markersize = 6, markeredgecolor = 'blue', markerfacecolor = 'white')
+        # 범례 표시 및 위치 지정
+        plt.legend(loc = 'upper left')
+        
+        # x축 설정
+        plt.xticks(idx_List, labels = stdDayList, rotation = 45) # rotation:각도
+        # plt.yticks([90000, 100000, 110000])
+        
+        # plt.xlabel('일별', fontsize = 13, labelpad = 5)
+        # plt.ylabel('확진자수', fontsize = 13, labelpad = 5)
+        
+        # 그래프 파일로 저장
+        # plt.plot(x,y)
+        # plt.savefig("경로명/그래프파일명.png", dpi = 100)
+        plt.show()
 
 
 class SlackAPI:
@@ -239,9 +281,11 @@ class SlackAPI:
 #--------------------------------------------------------------------------------------------------#
 def main():
     config = ReadConfig.load_config(ReadConfig())
+    
+    # 오늘차 데이터가 있는지 확인
     file_list = FileAPI.set_date(FileAPI(config))
-    stdDayList, defCntList = ReadXmlData.parse_data(ReadXmlData(file_list))
-    CreateChart(stdDayList, defCntList)
+    stdDayList, defCntList, isolClearList = ReadXmlData.parse_data(ReadXmlData(file_list))
+    ChartAPI.create_chart(ChartAPI(), stdDayList, defCntList, isolClearList)
 
 if __name__ == "__main__":
     main()
