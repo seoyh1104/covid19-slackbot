@@ -21,7 +21,6 @@ import matplotlib.font_manager as fm
 from slack_sdk.errors import SlackApiError
 from slack_sdk import WebClient            # requires: pip install slack_sdk
 
-
 class SystemInfo:
     def system_info():
         hostname = socket.gethostname() # PC명
@@ -31,7 +30,7 @@ class SystemInfo:
     def get_file_directory():
         return (os.path.dirname(os.path.realpath(__file__)))
     
-    def datetime_format(dates, format):
+    def datetime_format(date_time, format):
         match format:
             case 1:
                 format = '%Y%m%d'                   # yyyyMMdd
@@ -43,11 +42,18 @@ class SystemInfo:
                 format = '%Y%m%d%H%M%S'             # yyyyMMddHHmmss
             case 5:
                 format = '%Y년 %m월 %d일'            # yyyy년 MM월 dd일
-            case 5:
-                format = '%Y년%m월%d일 %H시%M분%S초' # yyyy년MM월dd일 HH시mm분ss초
+            case 6:
+                format = '%Y년%m월%d일 %H시%M분%S초'  # yyyy년MM월dd일 HH시mm분ss초
+            case 7:
+                format = '%Y/%m/%d'                 # YY/MM/dd/
             case _:
                 format = '%Y%m%d%H%M%S'
-        formatted = dates.strftime(format)
+        
+        if type(date_time) is str:
+            formatted = datetime.strptime(date_time, format).date()
+        else:
+            formatted = date_time.strftime(format)
+        
         return formatted
 
 
@@ -67,8 +73,8 @@ class ReadConfig:
 
 
 class FileAPI:
-    def __init__(self, config):
-        self.Covid19 = Covid19API(config)
+    def __init__(self, config, PublicC19):
+        self.PublicC19 = PublicC19
         self.config = config
         self.directory = config.get('FILES', 'directory')
         self.file_name = config.get('FILES', 'file_name')
@@ -98,7 +104,7 @@ class FileAPI:
 
     def find_file(self, dates, file_path):
         if not os.path.isfile(file_path):
-            response_body = Covid19API.http_get(self.Covid19, dates)
+            response_body = Covid19API.http_get(self.PublicC19, dates)
             self.save_xml(file_path, response_body)
         else:
             print('Xml file exists. : ' + file_path)
@@ -136,19 +142,19 @@ class Covid19API:
             # FIXME: 여러번 request할 때의 로직 수정 필요, Concurrent GET request, list of_urls
             if response.status == 200:
                 response_body = response.read()
+                print(response.headers) # Date, Server, Content-Length, Connection, Content-Type
                 return response_body
                 # print('response.url : ' + response.url) # redirection url
-                # print(response.headers) # Date, Server, Content-Length, Connection, Content-Type
+                
         except Exception as e:
             print(e)
+            return False
 
 
 class ReadXmlData:
     def __init__(self, file_list):
         self.stdDayList = []    # 기준일자
         self.incDecList = []    # 전일대비확진자증감수
-        self.isolClearList = [] # 누적격리해제수
-        self.incheon = []       # 인천
         self.file_list = file_list
     
     def parse_data(self):
@@ -170,14 +176,14 @@ class ReadXmlData:
                         dict['지역발생수'] = data.findtext('localOccCnt')
                         dict['해외유입수'] = data.findtext('overFlowCnt')
                         # dict['10만명당발생율'] = data.findtext('qurRate')
-                        dict['기준일자'] = data.findtext('stdDay')
+                        
+                        stdDay_str = data.findtext('stdDay')
+                        dict['기준일자'] = stdDay_str[-5:].replace('-', '/')
+                        
                         dict['사망자수'] = data.findtext('deathCnt')
                         
-                        self.stdDayList.append(dict['기준일자'])
+                        self.stdDayList.append(dict['기준일자']) # TODO: format MM/DD로 변경하고 싶음
                         self.incDecList.append(dict['전일대비확진자증감수'])
-                        self.isolClearList.append(dict['사망자수'])
-                        
-                        print(dict['사망자수'])
                         
                     if result_code == '00' and (data.findtext('gubunEn') == sido):
                         incDec = data.find('incDec').text
@@ -185,7 +191,7 @@ class ReadXmlData:
                 
             except Exception as e:
                 raise e
-        return self.stdDayList, self.incDecList, self.isolClearList
+        return self.stdDayList, self.incDecList
 
 
 class ChartAPI:
@@ -202,36 +208,35 @@ class ChartAPI:
         plt.rcParams['axes.unicode_minus'] = False # (-) 부호 깨짐 현상 방지
         
         
-    def create_chart(self, stdDayList, incDecList, isolClearList):
+    def create_chart(self, stdDayList, incDecList):
         idx_List = list(range(len(stdDayList)))
         inc_dec = list(map(int, incDecList))
-        isol_clear = list(map(int, isolClearList))
         
         plt.figure(figsize = (10,5)) # 그래프 크기 지정
-        plt.title('한국 코로나19 감염 및 완치 추이 ' + self.today, fontsize = 16, color = 'navy')
+        plt.suptitle('한국 코로나19 감염 추이', fontsize = 16, color = 'black')
+        plt.title('기준일자 : '+ self.today, loc = 'right', fontsize = 12, color = 'gray')
         plt.xlabel('기준일자', fontsize = 13)
-        plt.ylabel('확진자수', fontsize = 13)
+        plt.ylabel('확진자수(명)', fontsize = 13)
         
-        # 선 그래프 그리기, 선 스타일 지정, 범례 추가
-        plt.plot(idx_List, inc_dec, linewidth = 3, color='hotpink', label = '확진자 수 추이',
-                # 표식 추가, 표식 스타일 지정
-                marker = 'o', markersize = 6, markeredgecolor = 'hotpink', markerfacecolor = 'white')
-        plt.plot(idx_List, isol_clear, linewidth = 3, color='blue', label = '격리해제 수 추이',
-                marker = 'o', markersize = 6, markeredgecolor = 'blue', markerfacecolor = 'white')
+        # 꺾은 선 그래프 생성
+        plt.plot(idx_List, inc_dec,
+                linewidth = 3, color='hotpink', label = '확진자 수 추이', # 선 스타일 지정, 범례 추가
+                marker = 'o', markersize = 6, markeredgecolor = 'hotpink', markerfacecolor = 'white') # 표식 추가, 표식 스타일 지정
         # 범례 표시 및 위치 지정
-        plt.legend(loc = 'upper left')
+        plt.legend(loc = 'lower right')
         
         # x축 설정
-        plt.xticks(idx_List, labels = stdDayList, rotation = 45) # rotation:각도
-        # plt.yticks([90000, 100000, 110000])
+        plt.xticks(idx_List, labels = stdDayList, rotation = 35) # rotation:각도
         
-        # plt.xlabel('일별', fontsize = 13, labelpad = 5)
-        # plt.ylabel('확진자수', fontsize = 13, labelpad = 5)
-        
-        # 그래프 파일로 저장
-        # plt.plot(x,y)
+        # 그래프 값 표시
+        for i in range(len(idx_List)):
+            height = inc_dec[i]
+            plt.text(idx_List[i], height, format(height, ','), ha = 'center', va = 'bottom', size = 11, color = 'black')
+            
         # plt.savefig("경로명/그래프파일명.png", dpi = 100)
         plt.show()
+        
+        return plt
 
 
 class SlackAPI:
@@ -281,11 +286,17 @@ class SlackAPI:
 #--------------------------------------------------------------------------------------------------#
 def main():
     config = ReadConfig.load_config(ReadConfig())
+    PublicC19 = Covid19API(config)
     
-    # 오늘차 데이터가 있는지 확인
-    file_list = FileAPI.set_date(FileAPI(config))
-    stdDayList, defCntList, isolClearList = ReadXmlData.parse_data(ReadXmlData(file_list))
-    ChartAPI.create_chart(ChartAPI(), stdDayList, defCntList, isolClearList)
+    # 오늘날짜의 공공데이터가 있는지 확인, 없는 경우 xml 파일로 저장
+    if Covid19API.http_get(PublicC19, date.today() + timedelta(days = 1)):
+        file_list = FileAPI.set_date(FileAPI(config, PublicC19))
+
+        # xml 파싱
+        stdDayList, incDecList = ReadXmlData.parse_data(ReadXmlData(file_list))
+        
+        # Chart 생성
+        ChartAPI.create_chart(ChartAPI(), stdDayList, incDecList)
 
 if __name__ == "__main__":
     main()
