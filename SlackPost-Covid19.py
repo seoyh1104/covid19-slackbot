@@ -77,12 +77,17 @@ class FileAPI:
         self.PublicC19 = PublicC19
         self.config = config
         self.directory = config.get('FILES', 'directory')
+        self.dir_chart = config.get('FILES', 'dir_chart')
         self.file_name = config.get('FILES', 'file_name')
-        self.exists_dir()
+        self.mkdir()
 
-    def exists_dir(self):
-        if not os.path.exists(self.directory):
-            os.mkdir(self.directory)
+    def exists_dir(self, directory):
+        if not os.path.exists(directory):
+            os.mkdir(directory)
+    
+    def mkdir(self):
+        self.exists_dir(self.directory)
+        self.exists_dir(self.dir_chart)
     
     def set_date(self):
         file_list = []
@@ -138,13 +143,18 @@ class Covid19API:
             request = r.Request(self.url + self.set_covid19uri(params))
             request.get_method = lambda: 'GET'
             response = r.urlopen(request)
-
+            
+            # TODO : status가 200이지만 body가 없으면 에러나도록 if 조건 추가 필요
+            tree = ET.parse(response)
+            root = tree.getroot()
+            body_check = root.find('body/items/item')
+            
             # FIXME: 여러번 request할 때의 로직 수정 필요, Concurrent GET request, list of_urls
-            if response.status == 200:
+            if response.status == 200 and body_check:
                 response_body = response.read()
-                print(response.headers) # Date, Server, Content-Length, Connection, Content-Type
-                return response_body
+                # print(response.headers) # Date, Server, Content-Length, Connection, Content-Type
                 # print('response.url : ' + response.url) # redirection url
+                return response_body
                 
         except Exception as e:
             print(e)
@@ -182,7 +192,7 @@ class ReadXmlData:
                         
                         dict['사망자수'] = data.findtext('deathCnt')
                         
-                        self.stdDayList.append(dict['기준일자']) # TODO: format MM/DD로 변경하고 싶음
+                        self.stdDayList.append(dict['기준일자'])
                         self.incDecList.append(dict['전일대비확진자증감수'])
                         
                     if result_code == '00' and (data.findtext('gubunEn') == sido):
@@ -195,8 +205,7 @@ class ReadXmlData:
 
 
 class ChartAPI:
-    def __init__(self):
-        self.today = SystemInfo.datetime_format(date.today(), 5)
+    def __init__(self, config):
         # matplotlib 한글깨짐 방지
         font_list = [font.name for font in fm.fontManager.ttflist]
         if 'Malgun Gothic' in font_list:
@@ -207,12 +216,16 @@ class ChartAPI:
             plt.rcParams['font.family'] = 'AppleGothic' # Mac OS
         plt.rcParams['axes.unicode_minus'] = False # (-) 부호 깨짐 현상 방지
         
+        self.dir_chart = config.get('FILES', 'dir_chart')
+        self.chart_name = config.get('FILES', 'chart_name')
+        self.today = SystemInfo.datetime_format(date.today(), 5)
+        self.chart_dt = SystemInfo.datetime_format(datetime.today(), 4)
         
     def create_chart(self, stdDayList, incDecList):
         idx_List = list(range(len(stdDayList)))
         inc_dec = list(map(int, incDecList))
         
-        plt.figure(figsize = (10,5)) # 그래프 크기 지정
+        plt.figure(figsize = (10,6)) # 그래프 크기 지정
         plt.suptitle('한국 코로나19 감염 추이', fontsize = 16, color = 'black')
         plt.title('기준일자 : '+ self.today, loc = 'right', fontsize = 12, color = 'gray')
         plt.xlabel('기준일자', fontsize = 13)
@@ -223,7 +236,7 @@ class ChartAPI:
                 linewidth = 3, color='hotpink', label = '확진자 수 추이', # 선 스타일 지정, 범례 추가
                 marker = 'o', markersize = 6, markeredgecolor = 'hotpink', markerfacecolor = 'white') # 표식 추가, 표식 스타일 지정
         # 범례 표시 및 위치 지정
-        plt.legend(loc = 'lower right')
+        plt.legend(loc = 'best')
         
         # x축 설정
         plt.xticks(idx_List, labels = stdDayList, rotation = 35) # rotation:각도
@@ -232,32 +245,111 @@ class ChartAPI:
         for i in range(len(idx_List)):
             height = inc_dec[i]
             plt.text(idx_List[i], height, format(height, ','), ha = 'center', va = 'bottom', size = 11, color = 'black')
-            
-        # plt.savefig("경로명/그래프파일명.png", dpi = 100)
-        plt.show()
         
-        return plt
+        file = self.dir_chart + '\\' + self.chart_name + '_' + self.chart_dt + '.png'
+        plt.savefig(file, dpi = 100)
+        # plt.show()
+        
+        return file
 
 
+class I18nAPI:
+    def __init__(self):
+        self.i18n = [
+            {
+                "IconUrl": "https://emoji.slack-edge.com/T017B0ZC4DB/gov_korea/a541d1740dc158e3.png",
+                "en": {
+                    "notification": "Today''s COVID-19 Notification in S.Korea",
+                    "title": "COVID-19 Statistics",
+                    "block_section_one_title": ":one: New Cases (Subtotal) : ",
+                    "block_section_three_title": ":two: Daily Trend",
+                    "attach_one_title": ":one: Daily New Cases",
+                    "attach_one_field_one": "Subtotal (A+B)",
+                    "attach_one_field_two": "Domestic (A)",
+                    "attach_one_field_three": "Inflow (B)",
+                    "attach_one_field_four": "Incheon",
+                    "attach_one_footer": "<http://ncov.kdca.go.kr/en/|KDCA(English)>",
+                    "attach_two_title": ":two: Infection Status",
+                    "attach_two_field_two": "Confirmed",
+                    "attach_two_field_four": "Death",
+                    "attach_two_footer": "<http://ncov.kdca.go.kr/en/|KDCA(English)>",
+                    "attach_three_title": ":two: Chart",
+                    "plot_title": "Daily Trend of COVID-19, Republic of Korea",
+                    "plot_data_one": "Confirmed",
+                    "plot_xlabel": "Date",
+                    "plot_ylabel": "Cases"
+                    },
+                "ko": {
+                    "notification": "오늘의 코로나19 알림",
+                    "title": "코로나19 통계정보",
+                    "block_section_one_title": ":one: 추가확진 (소계) : ",
+                    "block_section_three_title": ":two: 일자별 추이",
+                    "attach_one_title": ":one: 추가확진",
+                    "attach_one_field_one": "소계 (A+B)",
+                    "attach_one_field_two": "국내 (A)",
+                    "attach_one_field_three": "해외유입 (B)",
+                    "attach_one_field_four": "인천",
+                    "attach_one_footer": "<http://ncov.kdca.go.kr/|KDCA(Korean)",
+                    "attach_two_title": ":two: 감염현황",
+                    "attach_two_field_two": "누적확진",
+                    "attach_two_field_four": "사망",
+                    "attach_two_footer": "<http://ncov.kdca.go.kr/|KDCA(Korean)>",
+                    "attach_three_title": ":two: 차트",
+                    "plot_title": "한국의 코로나19 감염 추이",
+                    "plot_data_one": "확진",
+                    "plot_xlabel": "일자",
+                    "plot_ylabel": "건수"
+                    },
+                "ja": {
+                    "notification": "本日のコロナ19のお知らせ(韓国)",
+                    "title": "コロナ19の統計情報",
+                    "block_section_one_title": ":one: 追加確診 (小計) : ",
+                    "block_section_three_title": ":two: 日付別推移",
+                    "attach_one_title": ":one: 追加確診",
+                    "attach_one_field_one": "小計 (A+B)",
+                    "attach_one_field_two": "韓国国内 (A)",
+                    "attach_one_field_three": "海外流入 (B)",
+                    "attach_one_field_four": "仁川",
+                    "attach_one_footer": "<http://ncov.kdca.go.kr/en/|KDCA(English)>",
+                    "attach_two_title": ":two: 感染状況",
+                    "attach_two_field_two": "累積確診",
+                    "attach_two_field_four": "死亡",
+                    "attach_two_footer": "<http://ncov.kdca.go.kr/en/|KDCA(English)>",
+                    "attach_three_title": ":two: チャート",
+                    "plot_title": "韓国のコロナ19感染推移",
+                    "plot_data_one": "確診",
+                    "plot_xlabel": "日付",
+                    "plot_ylabel": "件数"
+                    }
+                }
+            ]
+        
+    def set_i18n(self, lang):
+        lang = self.i18n[0].get(lang)
+        return lang
+    
+    
 class SlackAPI:
-    def __init__(self, token, config, now):
+    def __init__(self, config):
+        token = config.get('SLACK', 'bot_token')
         # 슬랙 클라이언트 인스턴스 생성
         self.client = WebClient(token)
+        self.channel_id = config.get('SLACK', 'channel_id')
         self.hostname = SystemInfo.system_info()
-        self.datetime = SystemInfo.get_current_datetime(now, 2)
-        self.channel_id = config['SLACK']['channel_id']
-        
-    def post_Message(self, msg):
+        self.datetime = SystemInfo.datetime_format(date.today(), 2)
+        # self.file = file
+    
+    def post_Message(self, text):
         try:
             response= self.client.chat_postMessage(
             channel= self.channel_id,
-            text = '', # Slack 전송시 알람 메세지
+            text = '텍스트입니다.',
             blocks=[
                 {
                     "type": "header",
                     "text": {
                         "type": "plain_text",
-                        "text": "text"
+                        "text": text.get('title')
                     }
                 },
                 {
@@ -273,8 +365,18 @@ class SlackAPI:
                     "type": "section",
                     "text": {
                         "type": "mrkdwn",
-                        "text": msg
+                        "text": text.get('block_section_one_title') + "몇건"
                     }
+                },
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": text.get('block_section_three_title')
+                    }
+                },
+                {
+                    "type": "divider"
                 }
             ]
         )
@@ -286,17 +388,24 @@ class SlackAPI:
 #--------------------------------------------------------------------------------------------------#
 def main():
     config = ReadConfig.load_config(ReadConfig())
-    PublicC19 = Covid19API(config)
+    covid19 = Covid19API(config)
+    slack = SlackAPI(config)
     
-    # 오늘날짜의 공공데이터가 있는지 확인, 없는 경우 xml 파일로 저장
-    if Covid19API.http_get(PublicC19, date.today() + timedelta(days = 1)):
-        file_list = FileAPI.set_date(FileAPI(config, PublicC19))
+    # 1.정해진 기간의 공공데이터(xml file)가 있는지 확인, 없는 경우 저장
+    if Covid19API.http_get(covid19, date.today() + timedelta(days = 1)):
+        file_list = FileAPI.set_date(FileAPI(config, covid19))
 
-        # xml 파싱
+        # 2.xml 파싱
         stdDayList, incDecList = ReadXmlData.parse_data(ReadXmlData(file_list))
         
-        # Chart 생성
-        ChartAPI.create_chart(ChartAPI(), stdDayList, incDecList)
+        # 3.Chart 생성
+        chart = ChartAPI.create_chart(ChartAPI(config), stdDayList, incDecList)
 
+        # 4.slack 전송
+        lang = ['en', 'ko', 'ja']
+        for la in lang:
+            text = I18nAPI.set_i18n(I18nAPI(), la)
+            SlackAPI.post_Message(slack, text)
+        
 if __name__ == "__main__":
     main()
