@@ -19,7 +19,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import matplotlib.font_manager as fm
 from slack_sdk.errors import SlackApiError
-from slack_sdk import WebClient            # requires: pip install slack_sdk
+from slack_sdk import WebClient
 
 class SystemInfo:
     def system_info():
@@ -143,15 +143,12 @@ class Covid19API:
             request = r.Request(self.url + self.set_covid19uri(params))
             request.get_method = lambda: 'GET'
             response = r.urlopen(request)
-            
-            # TODO : status가 200이지만 body가 없으면 에러나도록 if 조건 추가 필요
-            tree = ET.parse(response)
-            root = tree.getroot()
-            body_check = root.find('body/items/item')
+            response_body = response.read()
+            tree = ET.fromstring(response_body)
+            result_code = tree.findtext('header/resultCode')
             
             # FIXME: 여러번 request할 때의 로직 수정 필요, Concurrent GET request, list of_urls
-            if response.status == 200 and body_check:
-                response_body = response.read()
+            if response.status == 200 and (result_code == '00' and tree.find('body/items/item')):
                 # print(response.headers) # Date, Server, Content-Length, Connection, Content-Type
                 # print('response.url : ' + response.url) # redirection url
                 return response_body
@@ -163,45 +160,54 @@ class Covid19API:
 
 class ReadXmlData:
     def __init__(self, file_list):
-        self.stdDayList = []    # 기준일자
-        self.incDecList = []    # 전일대비확진자증감수
         self.file_list = file_list
-    
+        self.today = SystemInfo.datetime_format(date.today(), 2)
+        self.stdDayList = []   # 기준일자
+        self.incDecList = []   # 전일대비확진자증감수
+        self.dataList = []
+        
     def parse_data(self):
         dict = {}
         for file in self.file_list:
             tree = ET.parse(file)
             root = tree.getroot()
-            result_code = root.find('header/resultCode').text
             sido = 'Incheon'
             try:
                 for data in root.findall('body/items/item'):
-                    if result_code == '00' and (data.findtext('gubunEn') == 'Total'):
-                        dict['누적확진자수'] = data.findtext('defCnt')
+                    if data.findtext('gubunEn') == 'Total':
                         dict['시도명'] = data.findtext('gubun')
                         dict['시도명(영문)'] = data.findtext('gubunEn')
                         dict['전일대비확진자증감수'] = data.findtext('incDec')
-                        # dict['누적격리해제수'] = data.findtext('isolClearCnt') # 데이터가 0만 들어옴
-                        # dict['격리중환자수'] = data.findtext('isolIngCnt') # 데이터가 0만 들어옴
-                        dict['지역발생수'] = data.findtext('localOccCnt')
-                        dict['해외유입수'] = data.findtext('overFlowCnt')
+                        # dict['누적격리해제수'] = data.findtext('isolClearCnt') # data값 전부 0
+                        # dict['격리중환자수'] = data.findtext('isolIngCnt') # data값 전부 0
                         # dict['10만명당발생율'] = data.findtext('qurRate')
                         
                         stdDay_str = data.findtext('stdDay')
                         dict['기준일자'] = stdDay_str[-5:].replace('-', '/')
                         
-                        dict['사망자수'] = data.findtext('deathCnt')
-                        
                         self.stdDayList.append(dict['기준일자'])
                         self.incDecList.append(dict['전일대비확진자증감수'])
                         
-                    if result_code == '00' and (data.findtext('gubunEn') == sido):
-                        incDec = data.find('incDec').text
-                        date = data.find('stdDay').text
-                
+                    if (data.findtext('stdDay') == self.today and data.findtext('gubunEn') == 'Total'):
+                        dict['누적확진자수'] = data.findtext('defCnt')
+                        dict['전일대비확진자증감수'] = data.findtext('incDec')
+                        dict['지역발생수'] = data.findtext('localOccCnt')
+                        dict['해외유입수'] = data.findtext('overFlowCnt')
+                        dict['사망자수'] = data.findtext('deathCnt')
+                        
+                        self.dataList.append(dict['누적확진자수'])
+                        self.dataList.append(dict['전일대비확진자증감수'])
+                        self.dataList.append(dict['지역발생수'])
+                        self.dataList.append(dict['해외유입수'])
+                        self.dataList.append(dict['사망자수'])
+                    
+                    if (data.findtext('stdDay') == self.today and data.findtext('gubunEn') == sido):
+                        dict[sido] = data.findtext('incDec')
+                        self.dataList.append(dict[sido])
+                    
             except Exception as e:
                 raise e
-        return self.stdDayList, self.incDecList
+        return self.stdDayList, self.incDecList, self.dataList
 
 
 class ChartAPI:
@@ -262,7 +268,7 @@ class I18nAPI:
                     "notification": "Today''s COVID-19 Notification in S.Korea",
                     "title": "COVID-19 Statistics",
                     "block_section_one_title": ":one: New Cases (Subtotal) : ",
-                    "block_section_three_title": ":two: Daily Trend",
+                    "block_section_two_title": ":two: Daily Trend",
                     "attach_one_title": ":one: Daily New Cases",
                     "attach_one_field_one": "Subtotal (A+B)",
                     "attach_one_field_two": "Domestic (A)",
@@ -270,10 +276,10 @@ class I18nAPI:
                     "attach_one_field_four": "Incheon",
                     "attach_one_footer": "<http://ncov.kdca.go.kr/en/|KDCA(English)>",
                     "attach_two_title": ":two: Infection Status",
-                    "attach_two_field_two": "Confirmed",
-                    "attach_two_field_four": "Death",
+                    "attach_two_field_one": "Confirmed",
+                    "attach_two_field_two": "Death",
                     "attach_two_footer": "<http://ncov.kdca.go.kr/en/|KDCA(English)>",
-                    "attach_three_title": ":two: Chart",
+                    "attach_two_title": ":two: Chart",
                     "plot_title": "Daily Trend of COVID-19, Republic of Korea",
                     "plot_data_one": "Confirmed",
                     "plot_xlabel": "Date",
@@ -283,18 +289,18 @@ class I18nAPI:
                     "notification": "오늘의 코로나19 알림",
                     "title": "코로나19 통계정보",
                     "block_section_one_title": ":one: 추가확진 (소계) : ",
-                    "block_section_three_title": ":two: 일자별 추이",
+                    "block_section_two_title": ":two: 일자별 추이",
                     "attach_one_title": ":one: 추가확진",
                     "attach_one_field_one": "소계 (A+B)",
                     "attach_one_field_two": "국내 (A)",
                     "attach_one_field_three": "해외유입 (B)",
                     "attach_one_field_four": "인천",
-                    "attach_one_footer": "<http://ncov.kdca.go.kr/|KDCA(Korean)",
+                    "attach_one_footer": "<http://ncov.kdca.go.kr/|KDCA(Korean)>",
                     "attach_two_title": ":two: 감염현황",
-                    "attach_two_field_two": "누적확진",
-                    "attach_two_field_four": "사망",
+                    "attach_two_field_one": "누적확진",
+                    "attach_two_field_two": "사망",
                     "attach_two_footer": "<http://ncov.kdca.go.kr/|KDCA(Korean)>",
-                    "attach_three_title": ":two: 차트",
+                    "attach_two_title": ":two: 차트",
                     "plot_title": "한국의 코로나19 감염 추이",
                     "plot_data_one": "확진",
                     "plot_xlabel": "일자",
@@ -304,7 +310,7 @@ class I18nAPI:
                     "notification": "本日のコロナ19のお知らせ(韓国)",
                     "title": "コロナ19の統計情報",
                     "block_section_one_title": ":one: 追加確診 (小計) : ",
-                    "block_section_three_title": ":two: 日付別推移",
+                    "block_section_two_title": ":two: 日付別推移",
                     "attach_one_title": ":one: 追加確診",
                     "attach_one_field_one": "小計 (A+B)",
                     "attach_one_field_two": "韓国国内 (A)",
@@ -312,10 +318,10 @@ class I18nAPI:
                     "attach_one_field_four": "仁川",
                     "attach_one_footer": "<http://ncov.kdca.go.kr/en/|KDCA(English)>",
                     "attach_two_title": ":two: 感染状況",
-                    "attach_two_field_two": "累積確診",
-                    "attach_two_field_four": "死亡",
+                    "attach_two_field_one": "累積確診",
+                    "attach_two_field_two": "死亡",
                     "attach_two_footer": "<http://ncov.kdca.go.kr/en/|KDCA(English)>",
-                    "attach_three_title": ":two: チャート",
+                    "attach_two_title": ":two: チャート",
                     "plot_title": "韓国のコロナ19感染推移",
                     "plot_data_one": "確診",
                     "plot_xlabel": "日付",
@@ -343,7 +349,7 @@ class SlackAPI:
         try:
             response= self.client.chat_postMessage(
             channel= self.channel_id,
-            text = '텍스트입니다.',
+            text = text.get('notification'),
             blocks=[
                 {
                     "type": "header",
@@ -372,11 +378,34 @@ class SlackAPI:
                     "type": "section",
                     "text": {
                         "type": "mrkdwn",
-                        "text": text.get('block_section_three_title')
+                        "text": text.get('block_section_two_title')
                     }
                 },
                 {
                     "type": "divider"
+                }
+            ],
+            attachments=[
+                {
+                    "fields": [
+                        { "short": True, "title": text.get('attach_one_field_one'), "value": "87,596" },
+                        { "short": True, "title": text.get('attach_one_field_two'), "value": "87,530" },
+                        { "short": True, "title": text.get('attach_one_field_three'), "value": "66" },
+                        { "short": True, "title": text.get('attach_one_field_four'), "value": "5,699" },
+                        { "short": True, "title": text.get('attach_two_field_one'), "value": "28,772,196" },
+                        { "short": True, "title": text.get('attach_two_field_two'), "value": "31,882" }
+                    ],
+                    "ts": text.get('data.dailyChange.create'),
+                    "color": "#dddddd", # TODO: 리스트에 icon 받아와야함
+                    "footer_icon": "https://emoji.slack-edge.com/T017B0ZC4DB/gov_korea/a541d1740dc158e3.png",
+                    "mrkdwn_in": ["title", "fields"],
+                    "footer": text.get('attach_one_footer'),
+                    "title": text.get('attach_one_title'),
+                },
+                {
+                    "color": "#dddddd",
+                    "title": text.get('attach_two_title'),
+                    "image_url": "/Upload-chart/Covid19-chart_20221226173420"
                 }
             ]
         )
@@ -391,12 +420,13 @@ def main():
     covid19 = Covid19API(config)
     slack = SlackAPI(config)
     
-    # 1.정해진 기간의 공공데이터(xml file)가 있는지 확인, 없는 경우 저장
-    if Covid19API.http_get(covid19, date.today() + timedelta(days = 1)):
+    # 1. 오늘의 공공데이터가 있는지 확인
+    if Covid19API.http_get(covid19, date.today()):
+        # 2. 정해진 기간의 공공데이터(xml file)가 전부 있는지 확인, 없는 경우 저장
         file_list = FileAPI.set_date(FileAPI(config, covid19))
 
         # 2.xml 파싱
-        stdDayList, incDecList = ReadXmlData.parse_data(ReadXmlData(file_list))
+        stdDayList, incDecList, dataList = ReadXmlData.parse_data(ReadXmlData(file_list))
         
         # 3.Chart 생성
         chart = ChartAPI.create_chart(ChartAPI(config), stdDayList, incDecList)
