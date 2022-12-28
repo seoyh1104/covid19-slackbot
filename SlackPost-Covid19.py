@@ -16,7 +16,6 @@ import socket
 import configparser
 import xml.etree.ElementTree as ET
 import matplotlib.pyplot as plt
-import numpy as np
 import matplotlib.font_manager as fm
 from slack_sdk.errors import SlackApiError
 from slack_sdk import WebClient
@@ -55,6 +54,17 @@ class SystemInfo:
             formatted = date_time.strftime(format)
         
         return formatted
+
+
+class CommonFunc:
+    def str_to_int(str):
+        str = format(int(str), ',')
+        return str
+    
+    def str_slicing(str):
+        index = str.rfind('/')
+        str = str[index+1:]
+        return str
 
 
 class ReadConfig:
@@ -148,7 +158,7 @@ class Covid19API:
             result_code = tree.findtext('header/resultCode')
             
             # FIXME: 여러번 request할 때의 로직 수정 필요, Concurrent GET request, list of_urls
-            if response.status == 200 and (result_code == '00' and tree.find('body/items/item')):
+            if response.status == 200 and result_code == '00' and tree.findtext('body/items/item'):
                 # print(response.headers) # Date, Server, Content-Length, Connection, Content-Type
                 # print('response.url : ' + response.url) # redirection url
                 return response_body
@@ -162,12 +172,13 @@ class ReadXmlData:
     def __init__(self, file_list):
         self.file_list = file_list
         self.today = SystemInfo.datetime_format(date.today(), 2)
-        self.stdDayList = []   # 기준일자
-        self.incDecList = []   # 전일대비확진자증감수
-        self.dataList = []
-        
+        self.total_stdday_list = [] # 기준일자
+        self.total_incdec_list = [] # 전일대비확진자증감수
+        self.data_cnt = {}
+    
     def parse_data(self):
         dict = {}
+        
         for file in self.file_list:
             tree = ET.parse(file)
             root = tree.getroot()
@@ -175,8 +186,8 @@ class ReadXmlData:
             try:
                 for data in root.findall('body/items/item'):
                     if data.findtext('gubunEn') == 'Total':
-                        dict['시도명'] = data.findtext('gubun')
-                        dict['시도명(영문)'] = data.findtext('gubunEn')
+                        # dict['시도명'] = data.findtext('gubun')
+                        # dict['시도명(영문)'] = data.findtext('gubunEn')
                         dict['전일대비확진자증감수'] = data.findtext('incDec')
                         # dict['누적격리해제수'] = data.findtext('isolClearCnt') # data값 전부 0
                         # dict['격리중환자수'] = data.findtext('isolIngCnt') # data값 전부 0
@@ -185,29 +196,22 @@ class ReadXmlData:
                         stdDay_str = data.findtext('stdDay')
                         dict['기준일자'] = stdDay_str[-5:].replace('-', '/')
                         
-                        self.stdDayList.append(dict['기준일자'])
-                        self.incDecList.append(dict['전일대비확진자증감수'])
+                        self.total_stdday_list.append(dict['기준일자'])
+                        self.total_incdec_list.append(dict['전일대비확진자증감수'])
                         
-                    if (data.findtext('stdDay') == self.today and data.findtext('gubunEn') == 'Total'):
-                        dict['누적확진자수'] = data.findtext('defCnt')
-                        dict['전일대비확진자증감수'] = data.findtext('incDec')
-                        dict['지역발생수'] = data.findtext('localOccCnt')
-                        dict['해외유입수'] = data.findtext('overFlowCnt')
-                        dict['사망자수'] = data.findtext('deathCnt')
+                    if data.findtext('stdDay') == self.today and data.findtext('gubunEn') == 'Total':
+                        self.data_cnt['누적확진자수'] = CommonFunc.str_to_int(data.findtext('defCnt'))
+                        self.data_cnt['전일대비확진자증감수'] = CommonFunc.str_to_int(data.findtext('incDec'))
+                        self.data_cnt['지역발생수'] = CommonFunc.str_to_int(data.findtext('localOccCnt'))
+                        self.data_cnt['해외유입수'] = CommonFunc.str_to_int(data.findtext('overFlowCnt'))
+                        self.data_cnt['사망자수'] = CommonFunc.str_to_int(data.findtext('deathCnt'))
                         
-                        self.dataList.append(dict['누적확진자수'])
-                        self.dataList.append(dict['전일대비확진자증감수'])
-                        self.dataList.append(dict['지역발생수'])
-                        self.dataList.append(dict['해외유입수'])
-                        self.dataList.append(dict['사망자수'])
-                    
-                    if (data.findtext('stdDay') == self.today and data.findtext('gubunEn') == sido):
-                        dict[sido] = data.findtext('incDec')
-                        self.dataList.append(dict[sido])
-                    
+                    if data.findtext('stdDay') == self.today and data.findtext('gubunEn') == sido:
+                        self.data_cnt[sido] = CommonFunc.str_to_int(data.findtext('incDec'))
+            
             except Exception as e:
                 raise e
-        return self.stdDayList, self.incDecList, self.dataList
+        return self.total_stdday_list, self.total_incdec_list, self.data_cnt
 
 
 class ChartAPI:
@@ -227,9 +231,9 @@ class ChartAPI:
         self.today = SystemInfo.datetime_format(date.today(), 5)
         self.chart_dt = SystemInfo.datetime_format(datetime.today(), 4)
         
-    def create_chart(self, stdDayList, incDecList):
-        idx_List = list(range(len(stdDayList)))
-        inc_dec = list(map(int, incDecList))
+    def create_chart(self, total_stdday_list, total_incdec_list, dataList):
+        idx_List = list(range(len(total_stdday_list)))
+        inc_dec = list(map(int, total_incdec_list))
         
         plt.figure(figsize = (10,6)) # 그래프 크기 지정
         plt.suptitle('한국 코로나19 감염 추이', fontsize = 16, color = 'black')
@@ -245,7 +249,7 @@ class ChartAPI:
         plt.legend(loc = 'best')
         
         # x축 설정
-        plt.xticks(idx_List, labels = stdDayList, rotation = 35) # rotation:각도
+        plt.xticks(idx_List, labels = total_stdday_list, rotation = 35) # rotation:각도
         
         # 그래프 값 표시
         for i in range(len(idx_List)):
@@ -254,6 +258,7 @@ class ChartAPI:
         
         file = self.dir_chart + '\\' + self.chart_name + '_' + self.chart_dt + '.png'
         plt.savefig(file, dpi = 100)
+        
         # plt.show()
         
         return file
@@ -263,7 +268,6 @@ class I18nAPI:
     def __init__(self):
         self.i18n = [
             {
-                "IconUrl": "https://emoji.slack-edge.com/T017B0ZC4DB/gov_korea/a541d1740dc158e3.png",
                 "en": {
                     "notification": "Today''s COVID-19 Notification in S.Korea",
                     "title": "COVID-19 Statistics",
@@ -326,9 +330,9 @@ class I18nAPI:
                     "plot_data_one": "確診",
                     "plot_xlabel": "日付",
                     "plot_ylabel": "件数"
-                    }
                 }
-            ]
+            }
+        ]
         
     def set_i18n(self, lang):
         lang = self.i18n[0].get(lang)
@@ -343,9 +347,64 @@ class SlackAPI:
         self.channel_id = config.get('SLACK', 'channel_id')
         self.hostname = SystemInfo.system_info()
         self.datetime = SystemInfo.datetime_format(date.today(), 2)
+        # self.payload = {}
+        # self.total_stdday_list = []
+        # self.total_incdec_list = []
         # self.file = file
     
+    def set_payload(self, total_stdday_list, total_incdec_list, cnt_data):
+        self.payload = {"IconUrl": "https://emoji.slack-edge.com/T017B0ZC4DB/gov_korea/a541d1740dc158e3.png"}
+        self.payload.update(cnt_data)
+        self.total_stdday_list = total_stdday_list
+        self.total_incdec_list = total_incdec_list
+    
     def post_Message(self, text):
+        chart =[
+            {
+                "type": "bar",
+                "data": {
+                    "labels": self.total_stdday_list,
+                    "datasets": [
+                        {
+                            "type": "line",
+                            "label": text.get('plot_data_one'),
+                            "borderColor": "rgb(255, 99, 132)",
+                            "borderColor": "rgba(255, 99, 132, 0.5)",
+                            "fill": "false",
+                            "data": self.total_incdec_list
+                        }
+                    ]
+                },
+                "options": {
+                    "title": {
+                        "display": "true",
+                        "text": text.get('plot_title'),
+                    },
+                    "scales": {
+                        "xAxes": [
+                            {
+                                "scaleLabel": {
+                                    "display": "true",
+                                    "labelString": text.get('plot_xlabel')
+                                }
+                            }
+                        ],
+                        "yAxes": [
+                            {
+                                "ticks": {
+                                    "beginAtZero": "true"
+                                },
+                                "scaleLabel": {
+                                    "display": "true",
+                                    "labelString": text.get('plot_ylabel')
+                                },
+                            }
+                        ]
+                    },
+                }
+            }
+        ]
+        
         try:
             response= self.client.chat_postMessage(
             channel= self.channel_id,
@@ -371,7 +430,7 @@ class SlackAPI:
                     "type": "section",
                     "text": {
                         "type": "mrkdwn",
-                        "text": text.get('block_section_one_title') + "몇건"
+                        "text": text.get('block_section_one_title') + self.payload.get('전일대비확진자증감수')
                     }
                 },
                 {
@@ -388,16 +447,16 @@ class SlackAPI:
             attachments=[
                 {
                     "fields": [
-                        { "short": True, "title": text.get('attach_one_field_one'), "value": "87,596" },
-                        { "short": True, "title": text.get('attach_one_field_two'), "value": "87,530" },
-                        { "short": True, "title": text.get('attach_one_field_three'), "value": "66" },
-                        { "short": True, "title": text.get('attach_one_field_four'), "value": "5,699" },
-                        { "short": True, "title": text.get('attach_two_field_one'), "value": "28,772,196" },
-                        { "short": True, "title": text.get('attach_two_field_two'), "value": "31,882" }
+                        { "short": True, "title": text.get('attach_one_field_one'), "value": self.payload.get('전일대비확진자증감수') },
+                        { "short": True, "title": text.get('attach_one_field_two'), "value": self.payload.get('지역발생수') },
+                        { "short": True, "title": text.get('attach_one_field_three'), "value": self.payload.get('해외유입수') },
+                        { "short": True, "title": text.get('attach_one_field_four'), "value": self.payload.get('Incheon') },
+                        { "short": True, "title": text.get('attach_two_field_one'), "value": self.payload.get('누적확진자수') },
+                        { "short": True, "title": text.get('attach_two_field_two'), "value": self.payload.get('사망자수') }
                     ],
                     "ts": text.get('data.dailyChange.create'),
-                    "color": "#dddddd", # TODO: 리스트에 icon 받아와야함
-                    "footer_icon": "https://emoji.slack-edge.com/T017B0ZC4DB/gov_korea/a541d1740dc158e3.png",
+                    "color": "#dddddd",
+                    "footer_icon": self.payload.get('IconUrl'),
                     "mrkdwn_in": ["title", "fields"],
                     "footer": text.get('attach_one_footer'),
                     "title": text.get('attach_one_title'),
@@ -405,7 +464,7 @@ class SlackAPI:
                 {
                     "color": "#dddddd",
                     "title": text.get('attach_two_title'),
-                    "image_url": "/Upload-chart/Covid19-chart_20221226173420"
+                    "image_url": self.plt
                 }
             ]
         )
@@ -420,19 +479,23 @@ def main():
     covid19 = Covid19API(config)
     slack = SlackAPI(config)
     
-    # 1. 오늘의 공공데이터가 있는지 확인
+    # 1. Check today's C19 data
     if Covid19API.http_get(covid19, date.today()):
-        # 2. 정해진 기간의 공공데이터(xml file)가 전부 있는지 확인, 없는 경우 저장
-        file_list = FileAPI.set_date(FileAPI(config, covid19))
-
-        # 2.xml 파싱
-        stdDayList, incDecList, dataList = ReadXmlData.parse_data(ReadXmlData(file_list))
         
-        # 3.Chart 생성
-        chart = ChartAPI.create_chart(ChartAPI(config), stdDayList, incDecList)
-
-        # 4.slack 전송
-        lang = ['en', 'ko', 'ja']
+        # 2. Check all C19 xml exist, Download Public C19 xml
+        file_list = FileAPI.set_date(FileAPI(config, covid19))
+        
+        # 3. Extract C19 Data from xml file
+        total_stdday_list, total_incdec_list, data_cnt = ReadXmlData.parse_data(ReadXmlData(file_list))
+        
+        # Create chart (matplotlib를 사용하여 차트를 새로 만드는 경우)
+        # ChartAPI.create_chart(ChartAPI(config), total_stdday_list, total_incdec_list, data_cnt)
+        
+        # 4. Set the payload
+        SlackAPI.set_payload(slack, total_stdday_list, total_incdec_list, data_cnt)
+        
+        # 5. Set i18n and post to Slack
+        lang = ['ko', 'ja', 'en']
         for la in lang:
             text = I18nAPI.set_i18n(I18nAPI(), la)
             SlackAPI.post_Message(slack, text)
