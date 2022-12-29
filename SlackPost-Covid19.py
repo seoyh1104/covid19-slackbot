@@ -12,6 +12,7 @@
 from urllib import request as r, parse
 from datetime import date, datetime, timedelta
 import os
+import json
 import socket
 import configparser
 import xml.etree.ElementTree as ET
@@ -87,21 +88,21 @@ class FileAPI:
         self.PublicC19 = PublicC19
         self.config = config
         self.directory = config.get('FILES', 'directory')
-        self.dir_chart = config.get('FILES', 'dir_chart')
+        # self.dir_chart = config.get('FILES', 'dir_chart')
         self.file_name = config.get('FILES', 'file_name')
-        self.mkdir()
-
-    def exists_dir(self, directory):
+        self.exists_dir()
+        
+    def exists_dir(self):
+        self.mkdir(self.directory)
+        # self.exists_dir(self.dir_chart)
+    
+    def mkdir(self, directory):
         if not os.path.exists(directory):
             os.mkdir(directory)
     
-    def mkdir(self):
-        self.exists_dir(self.directory)
-        self.exists_dir(self.dir_chart)
-    
     def set_date(self):
         file_list = []
-        start_date = date.today() - timedelta(days = 12)
+        start_date = date.today() - timedelta(days = 12) # 기간 설정
         end_date = date.today()
         
         while start_date <= end_date:
@@ -178,7 +179,6 @@ class ReadXmlData:
     
     def parse_data(self):
         dict = {}
-        
         for file in self.file_list:
             tree = ET.parse(file)
             root = tree.getroot()
@@ -193,8 +193,10 @@ class ReadXmlData:
                         # dict['격리중환자수'] = data.findtext('isolIngCnt') # data값 전부 0
                         # dict['10만명당발생율'] = data.findtext('qurRate')
                         
-                        stdDay_str = data.findtext('stdDay')
-                        dict['기준일자'] = stdDay_str[-5:].replace('-', '/')
+                        # 기준일자 포맷 변경 시
+                        # stdDay_str = data.findtext('stdDay')
+                        # dict['기준일자'] = stdDay_str[-5:].replace('-', '/')
+                        dict['기준일자'] = data.findtext('stdDay')
                         
                         self.total_stdday_list.append(dict['기준일자'])
                         self.total_incdec_list.append(dict['전일대비확진자증감수'])
@@ -258,7 +260,6 @@ class ChartAPI:
         
         file = self.dir_chart + '\\' + self.chart_name + '_' + self.chart_dt + '.png'
         plt.savefig(file, dpi = 100)
-        
         # plt.show()
         
         return file
@@ -266,76 +267,74 @@ class ChartAPI:
 
 class I18nAPI:
     def __init__(self):
-        self.i18n = [
-            {
-                "en": {
-                    "notification": "Today''s COVID-19 Notification in S.Korea",
-                    "title": "COVID-19 Statistics",
-                    "block_section_one_title": ":one: New Cases (Subtotal) : ",
-                    "block_section_two_title": ":two: Daily Trend",
-                    "attach_one_title": ":one: Daily New Cases",
-                    "attach_one_field_one": "Subtotal (A+B)",
-                    "attach_one_field_two": "Domestic (A)",
-                    "attach_one_field_three": "Inflow (B)",
-                    "attach_one_field_four": "Incheon",
-                    "attach_one_footer": "<http://ncov.kdca.go.kr/en/|KDCA(English)>",
-                    "attach_two_title": ":two: Infection Status",
-                    "attach_two_field_one": "Confirmed",
-                    "attach_two_field_two": "Death",
-                    "attach_two_footer": "<http://ncov.kdca.go.kr/en/|KDCA(English)>",
-                    "attach_two_title": ":two: Chart",
-                    "plot_title": "Daily Trend of COVID-19, Republic of Korea",
-                    "plot_data_one": "Confirmed",
-                    "plot_xlabel": "Date",
-                    "plot_ylabel": "Cases"
-                    },
-                "ko": {
-                    "notification": "오늘의 코로나19 알림",
-                    "title": "코로나19 통계정보",
-                    "block_section_one_title": ":one: 추가확진 (소계) : ",
-                    "block_section_two_title": ":two: 일자별 추이",
-                    "attach_one_title": ":one: 추가확진",
-                    "attach_one_field_one": "소계 (A+B)",
-                    "attach_one_field_two": "국내 (A)",
-                    "attach_one_field_three": "해외유입 (B)",
-                    "attach_one_field_four": "인천",
-                    "attach_one_footer": "<http://ncov.kdca.go.kr/|KDCA(Korean)>",
-                    "attach_two_title": ":two: 감염현황",
-                    "attach_two_field_one": "누적확진",
-                    "attach_two_field_two": "사망",
-                    "attach_two_footer": "<http://ncov.kdca.go.kr/|KDCA(Korean)>",
-                    "attach_two_title": ":two: 차트",
-                    "plot_title": "한국의 코로나19 감염 추이",
-                    "plot_data_one": "확진",
-                    "plot_xlabel": "일자",
-                    "plot_ylabel": "건수"
-                    },
-                "ja": {
-                    "notification": "本日のコロナ19のお知らせ(韓国)",
-                    "title": "コロナ19の統計情報",
-                    "block_section_one_title": ":one: 追加確診 (小計) : ",
-                    "block_section_two_title": ":two: 日付別推移",
-                    "attach_one_title": ":one: 追加確診",
-                    "attach_one_field_one": "小計 (A+B)",
-                    "attach_one_field_two": "韓国国内 (A)",
-                    "attach_one_field_three": "海外流入 (B)",
-                    "attach_one_field_four": "仁川",
-                    "attach_one_footer": "<http://ncov.kdca.go.kr/en/|KDCA(English)>",
-                    "attach_two_title": ":two: 感染状況",
-                    "attach_two_field_one": "累積確診",
-                    "attach_two_field_two": "死亡",
-                    "attach_two_footer": "<http://ncov.kdca.go.kr/en/|KDCA(English)>",
-                    "attach_two_title": ":two: チャート",
-                    "plot_title": "韓国のコロナ19感染推移",
-                    "plot_data_one": "確診",
-                    "plot_xlabel": "日付",
-                    "plot_ylabel": "件数"
-                }
+        self.i18n = {
+            "en": {
+                "notification": "Today''s COVID-19 Notification in S.Korea",
+                "title": "COVID-19 Statistics",
+                "block_section_one_title": ":one: New Cases (Subtotal) : ",
+                "block_section_two_title": ":two: Daily Trend",
+                "attach_one_title": ":one: Daily New Cases",
+                "attach_one_field_one": "Subtotal (A+B)",
+                "attach_one_field_two": "Domestic (A)",
+                "attach_one_field_three": "Inflow (B)",
+                "attach_one_field_four": "Incheon",
+                "attach_one_footer": "<http://ncov.kdca.go.kr/en/|KDCA(English)>",
+                "attach_two_title": ":two: Infection Status",
+                "attach_two_field_one": "Confirmed",
+                "attach_two_field_two": "Death",
+                "attach_two_footer": "<http://ncov.kdca.go.kr/en/|KDCA(English)>",
+                "attach_two_title": ":two: Chart",
+                "plot_title": "Daily Trend of COVID-19, Republic of Korea",
+                "plot_data_one": "Confirmed",
+                "plot_xlabel": "Date",
+                "plot_ylabel": "Cases"
+                },
+            "ko": {
+                "notification": "오늘의 코로나19 알림",
+                "title": "코로나19 통계정보",
+                "block_section_one_title": ":one: 추가확진 (소계) : ",
+                "block_section_two_title": ":two: 일자별 추이",
+                "attach_one_title": ":one: 추가확진",
+                "attach_one_field_one": "소계 (A+B)",
+                "attach_one_field_two": "국내 (A)",
+                "attach_one_field_three": "해외유입 (B)",
+                "attach_one_field_four": "인천",
+                "attach_one_footer": "<http://ncov.kdca.go.kr/|KDCA(Korean)>",
+                "attach_two_title": ":two: 감염현황",
+                "attach_two_field_one": "누적확진",
+                "attach_two_field_two": "사망",
+                "attach_two_footer": "<http://ncov.kdca.go.kr/|KDCA(Korean)>",
+                "attach_two_title": ":two: 차트",
+                "plot_title": "한국의 코로나19 감염 추이",
+                "plot_data_one": "확진",
+                "plot_xlabel": "일자",
+                "plot_ylabel": "건수"
+                },
+            "ja": {
+                "notification": "本日のコロナ19のお知らせ(韓国)",
+                "title": "コロナ19の統計情報",
+                "block_section_one_title": ":one: 追加確診 (小計) : ",
+                "block_section_two_title": ":two: 日付別推移",
+                "attach_one_title": ":one: 追加確診",
+                "attach_one_field_one": "小計 (A+B)",
+                "attach_one_field_two": "韓国国内 (A)",
+                "attach_one_field_three": "海外流入 (B)",
+                "attach_one_field_four": "仁川",
+                "attach_one_footer": "<http://ncov.kdca.go.kr/en/|KDCA(English)>",
+                "attach_two_title": ":two: 感染状況",
+                "attach_two_field_one": "累積確診",
+                "attach_two_field_two": "死亡",
+                "attach_two_footer": "<http://ncov.kdca.go.kr/en/|KDCA(English)>",
+                "attach_two_title": ":two: チャート",
+                "plot_title": "韓国のコロナ19感染推移",
+                "plot_data_one": "確診",
+                "plot_xlabel": "日付",
+                "plot_ylabel": "件数"
             }
-        ]
+        }
         
     def set_i18n(self, lang):
-        lang = self.i18n[0].get(lang)
+        lang = self.i18n.get(lang)
         return lang
     
     
@@ -347,63 +346,60 @@ class SlackAPI:
         self.channel_id = config.get('SLACK', 'channel_id')
         self.hostname = SystemInfo.system_info()
         self.datetime = SystemInfo.datetime_format(date.today(), 2)
-        # self.payload = {}
-        # self.total_stdday_list = []
-        # self.total_incdec_list = []
-        # self.file = file
     
     def set_payload(self, total_stdday_list, total_incdec_list, cnt_data):
         self.payload = {"IconUrl": "https://emoji.slack-edge.com/T017B0ZC4DB/gov_korea/a541d1740dc158e3.png"}
         self.payload.update(cnt_data)
-        self.total_stdday_list = total_stdday_list
-        self.total_incdec_list = total_incdec_list
+        self.chart_labels = total_stdday_list
+        self.chart_data = total_incdec_list
     
     def post_Message(self, text):
-        chart =[
-            {
-                "type": "bar",
-                "data": {
-                    "labels": self.total_stdday_list,
-                    "datasets": [
+        chart = {
+            "type": "bar",
+            "data": {
+                "labels": self.chart_labels,
+                "datasets": [
+                    {
+                        "type": "line",
+                        "label": text.get('plot_data_one'),
+                        "borderColor": "rgb(255, 99, 132)",
+                        "backgroundColor": "rgba(255, 99, 132, 0.5)",
+                        "fill": "false",
+                        "data": self.chart_data
+                    }
+                ]
+            },
+            "options": {
+                "title": {
+                    "display": "true",
+                    "text": text.get('plot_title'),
+                },
+                "scales": {
+                    "xAxes": [
                         {
-                            "type": "line",
-                            "label": text.get('plot_data_one'),
-                            "borderColor": "rgb(255, 99, 132)",
-                            "borderColor": "rgba(255, 99, 132, 0.5)",
-                            "fill": "false",
-                            "data": self.total_incdec_list
+                            "scaleLabel": {
+                                "display": "true",
+                                "labelString": text.get('plot_xlabel')
+                            }
+                        }
+                    ],
+                    "yAxes": [
+                        {
+                            "ticks": {
+                                "beginAtZero": "true"
+                            },
+                            "scaleLabel": {
+                                "display": "true",
+                                "labelString": text.get('plot_ylabel')
+                            },
                         }
                     ]
-                },
-                "options": {
-                    "title": {
-                        "display": "true",
-                        "text": text.get('plot_title'),
-                    },
-                    "scales": {
-                        "xAxes": [
-                            {
-                                "scaleLabel": {
-                                    "display": "true",
-                                    "labelString": text.get('plot_xlabel')
-                                }
-                            }
-                        ],
-                        "yAxes": [
-                            {
-                                "ticks": {
-                                    "beginAtZero": "true"
-                                },
-                                "scaleLabel": {
-                                    "display": "true",
-                                    "labelString": text.get('plot_ylabel')
-                                },
-                            }
-                        ]
-                    },
                 }
             }
-        ]
+        }
+        
+        chartUrl = 'https://quickchart.io/chart?bkg=%23ffffff&c='
+        chartUrl += parse.urlencode({'data': json.dumps(chart)})
         
         try:
             response= self.client.chat_postMessage(
@@ -454,7 +450,7 @@ class SlackAPI:
                         { "short": True, "title": text.get('attach_two_field_one'), "value": self.payload.get('누적확진자수') },
                         { "short": True, "title": text.get('attach_two_field_two'), "value": self.payload.get('사망자수') }
                     ],
-                    "ts": text.get('data.dailyChange.create'),
+                    # "ts": text.get('data.dailyChange.create'), # create time 정보 없음
                     "color": "#dddddd",
                     "footer_icon": self.payload.get('IconUrl'),
                     "mrkdwn_in": ["title", "fields"],
@@ -464,7 +460,7 @@ class SlackAPI:
                 {
                     "color": "#dddddd",
                     "title": text.get('attach_two_title'),
-                    "image_url": self.plt
+                    "image_url": chartUrl
                 }
             ]
         )
@@ -489,7 +485,7 @@ def main():
         total_stdday_list, total_incdec_list, data_cnt = ReadXmlData.parse_data(ReadXmlData(file_list))
         
         # Create chart (matplotlib를 사용하여 차트를 새로 만드는 경우)
-        # ChartAPI.create_chart(ChartAPI(config), total_stdday_list, total_incdec_list, data_cnt)
+        # ChartAPI.create_chart(ChartAPI(config), total_stdday_list, total_incdec_list
         
         # 4. Set the payload
         SlackAPI.set_payload(slack, total_stdday_list, total_incdec_list, data_cnt)
