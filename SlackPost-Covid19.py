@@ -376,22 +376,12 @@ class SlackAPI:
                 },
                 "scales": {
                     "xAxes": [
-                        {
-                            "scaleLabel": {
-                                "display": "true",
-                                "labelString": text.get('plot_xlabel')
-                            }
-                        }
+                        { "scaleLabel": { "display": "true", "labelString": text.get('plot_xlabel') } }
                     ],
                     "yAxes": [
                         {
-                            "ticks": {
-                                "beginAtZero": "true"
-                            },
-                            "scaleLabel": {
-                                "display": "true",
-                                "labelString": text.get('plot_ylabel')
-                            },
+                            "ticks": { "beginAtZero": "true" },
+                            "scaleLabel": { "display": "true", "labelString": text.get('plot_ylabel') },
                         }
                     ]
                 }
@@ -402,10 +392,10 @@ class SlackAPI:
         chartUrl += parse.urlencode({'data': json.dumps(chart)})
         
         try:
-            response= self.client.chat_postMessage(
-            channel= self.channel_id,
+            response = self.client.chat_postMessage(
+            channel = self.channel_id,
             text = text.get('notification'),
-            blocks=[
+            blocks = [
                 {
                     "type": "header",
                     "text": {
@@ -440,7 +430,7 @@ class SlackAPI:
                     "type": "divider"
                 }
             ],
-            attachments=[
+            attachments = [
                 {
                     "fields": [
                         { "short": True, "title": text.get('attach_one_field_one'), "value": self.payload.get('전일대비확진자증감수') },
@@ -450,12 +440,12 @@ class SlackAPI:
                         { "short": True, "title": text.get('attach_two_field_one'), "value": self.payload.get('누적확진자수') },
                         { "short": True, "title": text.get('attach_two_field_two'), "value": self.payload.get('사망자수') }
                     ],
-                    # "ts": text.get('data.dailyChange.create'), # create time 정보 없음
-                    "color": "#dddddd",
-                    "footer_icon": self.payload.get('IconUrl'),
-                    "mrkdwn_in": ["title", "fields"],
-                    "footer": text.get('attach_one_footer'),
                     "title": text.get('attach_one_title'),
+                    "color": "#dddddd",
+                    "mrkdwn_in": ["title", "fields"],
+                    "footer_icon": self.payload.get('IconUrl'),
+                    "footer": text.get('attach_one_footer'),
+                    # "ts": text.get('data.dailyChange.create'), # create time 정보 없음
                 },
                 {
                     "color": "#dddddd",
