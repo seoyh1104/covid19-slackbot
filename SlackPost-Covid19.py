@@ -4,8 +4,9 @@
 #  AUTHOR: Yuhui.Seo        2022/12/09                                                             #
 #--< CHANGE HISTORY >------------------------------------------------------------------------------#
 #          Yuhui.Seo        2022/12/09 #001(Add config file)                                       #
+#          Yuhui.Seo        2022/12/29 #002(Change layout, Use QuickChart)                         #
 #--< Version >-------------------------------------------------------------------------------------#
-#          Python version 3.10.0                                                                   #
+#          Python version 3.11.0 (Requires python version 3.10 or higher.)                         #
 #--------------------------------------------------------------------------------------------------#
 # Main process                                                                                     #
 #--------------------------------------------------------------------------------------------------#
@@ -16,10 +17,10 @@ import json
 import socket
 import configparser
 import xml.etree.ElementTree as ET
-import matplotlib.pyplot as plt
-import matplotlib.font_manager as fm
+import matplotlib.pyplot as plt      # requires: pip install matplotlib
+import matplotlib.font_manager as fm 
+from slack_sdk import WebClient      # requires: pip install slack_sdk
 from slack_sdk.errors import SlackApiError
-from slack_sdk import WebClient
 
 class SystemInfo:
     def system_info():
@@ -86,20 +87,31 @@ class ReadConfig:
 class FileAPI:
     def __init__(self, config, PublicC19):
         self.PublicC19 = PublicC19
-        self.config = config
-        self.directory = config.get('FILES', 'directory')
-        # self.dir_chart = config.get('FILES', 'dir_chart')
-        self.file_name = config.get('FILES', 'file_name')
+        config = config['FILES'] 
+        self.directory = config['directory']
+        self.dir_result = config['dir_result']
+        # self.dir_chart = config['dir_chart']
+        self.file_name = config['file_name']
+        self.result_file_name = config['result_file_name']
         self.exists_dir()
         
     def exists_dir(self):
         self.mkdir(self.directory)
-        # self.exists_dir(self.dir_chart)
+        self.mkdir(self.dir_result)
+        # self.mkdir(self.dir_chart)
     
-    def mkdir(self, directory):
-        if not os.path.exists(directory):
-            os.mkdir(directory)
+    def mkdir(self, dir):
+        if not os.path.exists(dir):
+            os.mkdir(dir)
     
+    def check_result(self):
+        file_path = self.set_txt_file_path()
+        if not os.path.isfile(file_path):
+            return True
+        else:
+            print('Result file exists. : ' + file_path)
+            return False
+        
     def set_date(self):
         file_list = []
         start_date = date.today() - timedelta(days = 12) # 기간 설정
@@ -107,7 +119,7 @@ class FileAPI:
         
         while start_date <= end_date:
             file_path = self.set_filepath(start_date)
-            self.find_file(start_date, file_path)
+            self.find_xml_file(start_date, file_path)
             file_list.append(file_path)
             start_date += timedelta(days = 1)
         
@@ -117,19 +129,32 @@ class FileAPI:
         dates = SystemInfo.datetime_format(dates, 1)
         file_path = self.directory + '\\' + dates + '_' + self.file_name
         return file_path
+    
+    def set_txt_file_path(self):
+        dates = SystemInfo.datetime_format(date.today(), 1)
+        file_path = self.dir_result + '\\' + dates + '_' + self.result_file_name
+        return file_path
 
-    def find_file(self, dates, file_path):
+    def find_xml_file(self, dates, file_path):
         if not os.path.isfile(file_path):
             response_body = Covid19API.http_get(self.PublicC19, dates)
-            self.save_xml(file_path, response_body)
+            self.save_file(file_path, response_body, 'Xml')
         else:
             print('Xml file exists. : ' + file_path)
-
-    def save_xml(self, file_path, xml):
+        
+    def find_txt_file(self):
+        file_path = self.set_txt_file_path()
+        if not os.path.isfile(file_path):
+            text_byte = 'ok'.encode('utf-8')
+            self.save_file(file_path, text_byte, 'Result')
+        else:
+            print('Result file exists. : ' + file_path)
+    
+    def save_file(self, file_path, data, text):
         f = open(file_path, 'wb')
-        f.write(xml)
+        f.write(data)
         f.close()
-        print('Xml file saved successfully. : ' + file_path)
+        print(text + ' file saved successfully. : ' + file_path)
 
 
 class Covid19API:
@@ -245,8 +270,8 @@ class ChartAPI:
         
         # 꺾은 선 그래프 생성
         plt.plot(idx_List, inc_dec,
-                linewidth = 3, color='hotpink', label = '확진자 수 추이', # 선 스타일 지정, 범례 추가
-                marker = 'o', markersize = 6, markeredgecolor = 'hotpink', markerfacecolor = 'white') # 표식 추가, 표식 스타일 지정
+            linewidth = 3, color='hotpink', label = '확진자 수 추이', # 선 스타일 지정, 범례 추가
+            marker = 'o', markersize = 6, markeredgecolor = 'hotpink', markerfacecolor = 'white') # 표식 추가, 표식 스타일 지정
         # 범례 표시 및 위치 지정
         plt.legend(loc = 'best')
         
@@ -381,7 +406,7 @@ class SlackAPI:
                     "yAxes": [
                         {
                             "ticks": { "beginAtZero": "true" },
-                            "scaleLabel": { "display": "true", "labelString": text.get('plot_ylabel') },
+                            "scaleLabel": { "display": "true", "labelString": text.get('plot_ylabel') }
                         }
                     ]
                 }
@@ -464,12 +489,13 @@ def main():
     config = ReadConfig.load_config(ReadConfig())
     covid19 = Covid19API(config)
     slack = SlackAPI(config)
+    file = FileAPI(config, covid19)
     
-    # 1. Check today's C19 data
-    if Covid19API.http_get(covid19, date.today()):
+    # 1. Check today's result data and C19 data
+    if FileAPI.check_result(file) and Covid19API.http_get(covid19, date.today()):
         
-        # 2. Check all C19 xml exist, Download Public C19 xml
-        file_list = FileAPI.set_date(FileAPI(config, covid19))
+        # 2. Check all C19 xml exist, Download C19 xml
+        file_list = FileAPI.set_date(file)
         
         # 3. Extract C19 Data from xml file
         total_stdday_list, total_incdec_list, data_cnt = ReadXmlData.parse_data(ReadXmlData(file_list))
@@ -485,6 +511,9 @@ def main():
         for la in lang:
             text = I18nAPI.set_i18n(I18nAPI(), la)
             SlackAPI.post_Message(slack, text)
+        # 6. Save result file
+        FileAPI.find_txt_file(file)
         
+
 if __name__ == "__main__":
     main()
