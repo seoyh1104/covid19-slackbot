@@ -28,8 +28,8 @@ class SystemInfo:
         # ip = socket.gethostbyname(hostname) #IP주소
         return hostname
     
-    def get_file_directory():
-        return (os.path.dirname(os.path.realpath(__file__)))
+    def get_file_abspath(): 
+        return os.path.dirname(os.path.abspath(__file__)) # PSScriptRoot
     
     def datetime_format(date_time, format):
         match format:
@@ -71,7 +71,7 @@ class CommonFunc:
 
 class ReadConfig:
     def __init__(self):
-        dir = SystemInfo.get_file_directory()
+        dir = SystemInfo.get_file_abspath()
         self.conf_file = dir + '\config.ini'
     
     def load_config(self):
@@ -87,8 +87,9 @@ class ReadConfig:
 class FileAPI:
     def __init__(self, config, PublicC19):
         self.PublicC19 = PublicC19
-        config = config['FILES'] 
-        self.directory = config['directory']
+        config = config['FILES']
+        self.dir = SystemInfo.get_file_abspath()
+        self.dir_download = config['dir_download']
         self.dir_result = config['dir_result']
         # self.dir_chart = config['dir_chart']
         self.file_name = config['file_name']
@@ -96,9 +97,9 @@ class FileAPI:
         self.exists_dir()
         
     def exists_dir(self):
-        self.mkdir(self.directory)
-        self.mkdir(self.dir_result)
-        # self.mkdir(self.dir_chart)
+        self.mkdir(os.path.join(self.dir, self.dir_download))
+        self.mkdir(os.path.join(self.dir, self.dir_result))
+        # self.mkdir(os.path.join(self.dir, self.dir_chart))
     
     def mkdir(self, dir):
         if not os.path.exists(dir):
@@ -127,12 +128,14 @@ class FileAPI:
 
     def set_filepath(self, dates):
         dates = SystemInfo.datetime_format(dates, 1)
-        file_path = self.directory + '\\' + dates + '_' + self.file_name
+        file_name = dates + '_' + self.file_name
+        file_path = os.path.join(self.dir, self.dir_download, file_name)
         return file_path
     
     def set_txt_file_path(self):
         dates = SystemInfo.datetime_format(date.today(), 1)
-        file_path = self.dir_result + '\\' + dates + '_' + self.result_file_name
+        file_name = dates + '_' + self.result_file_name
+        file_path = os.path.join(self.dir, self.dir_result, file_name)
         return file_path
 
     def find_xml_file(self, dates, file_path):
@@ -183,7 +186,6 @@ class Covid19API:
             tree = ET.fromstring(response_body)
             result_code = tree.findtext('header/resultCode')
             
-            # FIXME: 여러번 request할 때의 로직 수정 필요, Concurrent GET request, list of_urls
             if response.status == 200 and result_code == '00' and tree.findtext('body/items/item'):
                 # print(response.headers) # Date, Server, Content-Length, Connection, Content-Type
                 # print('response.url : ' + response.url) # redirection url
