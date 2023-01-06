@@ -28,8 +28,9 @@ class SystemInfo:
         # ip = socket.gethostbyname(hostname) #IP주소
         return hostname
     
-    def get_file_abspath(): 
-        return os.path.dirname(os.path.abspath(__file__)) # PSScriptRoot
+    def set_relative_file_path(): 
+        program_directory = os.path.dirname(os.path.abspath(__file__))
+        os.chdir(program_directory)
     
     def datetime_format(date_time, format):
         match format:
@@ -71,8 +72,8 @@ class CommonFunc:
 
 class ReadConfig:
     def __init__(self):
-        dir = SystemInfo.get_file_abspath()
-        self.conf_file = dir + '\config.ini'
+        SystemInfo.set_relative_file_path()
+        self.conf_file = 'config.ini'
     
     def load_config(self):
         if os.path.exists(self.conf_file) == False:
@@ -88,7 +89,6 @@ class FileAPI:
     def __init__(self, config, PublicC19):
         self.PublicC19 = PublicC19
         config = config['FILES']
-        self.dir = SystemInfo.get_file_abspath()
         self.dir_download = config['dir_download']
         self.dir_result = config['dir_result']
         # self.dir_chart = config['dir_chart']
@@ -97,9 +97,9 @@ class FileAPI:
         self.exists_dir()
         
     def exists_dir(self):
-        self.mkdir(os.path.join(self.dir, self.dir_download))
-        self.mkdir(os.path.join(self.dir, self.dir_result))
-        # self.mkdir(os.path.join(self.dir, self.dir_chart))
+        self.mkdir(self.dir_download)
+        self.mkdir(self.dir_result)
+        # self.mkdir(self.dir_chart)
     
     def mkdir(self, dir):
         if not os.path.exists(dir):
@@ -129,13 +129,13 @@ class FileAPI:
     def set_filepath(self, dates):
         dates = SystemInfo.datetime_format(dates, 1)
         file_name = dates + '_' + self.file_name
-        file_path = os.path.join(self.dir, self.dir_download, file_name)
+        file_path = os.path.join(self.dir_download, file_name)
         return file_path
     
     def set_txt_file_path(self):
         dates = SystemInfo.datetime_format(date.today(), 1)
         file_name = dates + '_' + self.result_file_name
-        file_path = os.path.join(self.dir, self.dir_result, file_name)
+        file_path = os.path.join(self.dir_result, file_name)
         return file_path
 
     def find_xml_file(self, dates, file_path):
@@ -285,11 +285,12 @@ class ChartAPI:
             height = inc_dec[i]
             plt.text(idx_List[i], height, format(height, ','), ha = 'center', va = 'bottom', size = 11, color = 'black')
         
-        file = self.dir_chart + '\\' + self.chart_name + '_' + self.chart_dt + '.png'
-        plt.savefig(file, dpi = 100)
+        file_name = self.chart_name + '_' + self.chart_dt + '.png'
+        file_path = os.path.join(self.dir_chart, file_name)
+        plt.savefig(file_path, dpi = 100)
         # plt.show()
         
-        return file
+        return file_path
 
 
 class I18nAPI:
