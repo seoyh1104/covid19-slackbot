@@ -28,7 +28,7 @@ class SystemInfo:
         # ip = socket.gethostbyname(hostname) #IP주소
         return hostname
     
-    def set_relative_file_path(): 
+    def set_relative_file_path():
         program_directory = os.path.dirname(os.path.abspath(__file__))
         os.chdir(program_directory)
     
