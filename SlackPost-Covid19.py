@@ -5,6 +5,7 @@
 #--< CHANGE HISTORY >------------------------------------------------------------------------------#
 #          Yuhui.Seo        2022/12/09 #001(Add config file)                                       #
 #          Yuhui.Seo        2022/12/29 #002(Change layout, Use QuickChart)                         #
+#          Yuhui.Seo        2023/02/27 #003(Add date flag and remove_duplicates fuction)           #
 #--< Version >-------------------------------------------------------------------------------------#
 #          Python version 3.11.0 (Requires python version 3.10 or higher.)                         #
 #--------------------------------------------------------------------------------------------------#
@@ -93,6 +94,7 @@ class FileAPI:
         self.dir_result = config['dir_result']
         # self.dir_chart = config['dir_chart']
         self.file_name = config['file_name']
+        self.file_list = []
         self.result_file_name = config['result_file_name']
         self.exists_dir()
         
@@ -114,17 +116,16 @@ class FileAPI:
             return False
         
     def set_date(self):
-        file_list = []
         start_date = date.today() - timedelta(days = 12) # 기간 설정
         end_date = date.today()
         
         while start_date <= end_date:
             file_path = self.set_filepath(start_date)
-            self.find_xml_file(start_date, file_path)
-            file_list.append(file_path)
+            if self.find_xml_file(start_date, file_path):
+                self.file_list.append(file_path)
             start_date += timedelta(days = 1)
         
-        return file_list
+        return self.file_list
 
     def set_filepath(self, dates):
         dates = SystemInfo.datetime_format(dates, 1)
@@ -141,9 +142,14 @@ class FileAPI:
     def find_xml_file(self, dates, file_path):
         if not os.path.isfile(file_path):
             response_body = Covid19API.http_get(self.PublicC19, dates)
-            self.save_file(file_path, response_body, 'Xml')
+            if response_body:
+                self.save_file(file_path, response_body, 'Xml')
+                return True
+            else:
+                return False
         else:
             print('Xml file exists. : ' + file_path)
+            return True
         
     def find_txt_file(self):
         file_path = self.set_txt_file_path()
@@ -190,6 +196,9 @@ class Covid19API:
                 # print(response.headers) # Date, Server, Content-Length, Connection, Content-Type
                 # print('response.url : ' + response.url) # redirection url
                 return response_body
+            else:
+                return False
+                #TODO: 파일 하나가 없다면 이전 날짜의 파일을 리스트에 추가해야함.
                 
         except Exception as e:
             print(e)
@@ -240,7 +249,22 @@ class ReadXmlData:
             
             except Exception as e:
                 raise e
-        return self.total_stdday_list, self.total_incdec_list, self.data_cnt
+        
+        total_stdday, total_incdec = self.remove_duplicates(self.total_stdday_list, self.total_incdec_list)
+        return total_stdday, total_incdec, self.data_cnt
+
+    def remove_duplicates(self, total_stdday_list, total_incdec_list):
+        # 중복되지 않은 stdDay 리스트와 그에 맞는 incdec 리스트를 저장할 변수 초기화
+        unique_stdday_list = []
+        unique_incdec_list = []
+
+        # 중복을 제거하면서 unique_stdday_list와 unique_incdec_list에 값을 추가
+        for i in range(len(total_stdday_list)):
+            if i == 0 or total_stdday_list[i] != total_stdday_list[i-1]:
+                unique_stdday_list.append(total_stdday_list[i])
+                unique_incdec_list.append(total_incdec_list[i])
+
+        return unique_stdday_list, unique_incdec_list
 
 
 class ChartAPI:
