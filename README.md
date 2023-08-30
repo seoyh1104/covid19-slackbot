@@ -15,18 +15,18 @@
 ### 구성
 - 아이템 선정 및 팀빌딩 : 개인 프로젝트
 - OpenAPI 상세 정보
-  - [보건복지부_코로나19 시도 발생현황](https://www.data.go.kr/data/15098776/openapi.do){:target="_blank"}
+  - [보건복지부_코로나19 시도 발생현황](https://www.data.go.kr/data/15098776/openapi.do)
   - 코로나19 시도 발생현황에 대한 데이터로 시도*별 코로나19 확진자, 격리현황 등 발생현황 정보 조회 기능을 제공합니다.
   - 17개 광역단위 기준 (서울, 부산, 대구, 인천, 광주, 대전, 울산, 세종, 경기, 강원, 충북, 충남, 전북, 전남, 경북, 경남, 제주)
-  - 데이터 출처: [질병관리청(코로나바이러스감염증-19 홈페이지)](https://ncov.kdca.go.kr/){:target="_blank"}
+  - 데이터 출처: [질병관리청(코로나바이러스감염증-19 홈페이지)](https://ncov.kdca.go.kr/)
   - 2023년 6월 1일~: 중앙재난안전대책본부(질병관리청)의 코로나19 위기단계 하향 및 방역 조치 전환 결정에 따라 '부터는 코로나19 시도 발생현황 데이터 업데이트가 주 단위로 전환되었습니다.
 
 ### 사용 기술 및 도구
 기술 선정
 - 개발언어 및 프레임워크: Python
-- UI: [Slack block-kit-builder](https://app.slack.com/block-kit-builder){:target="_blank"}를 활용하여 구성
-- 차트 생성: : Open Source Chart Image API [QuickChart](https://quickchart.io/documentation/reference/line-style){:target="_blank"} 활용
-  - [작성 예시: 실습-한국 코로나19 감염 추이](/python/quick-chart/#실습--한국-코로나19-감염-추이){:target="_blank"}
+- UI: [Slack block-kit-builder](https://app.slack.com/block-kit-builder)를 활용하여 구성
+- 차트 생성: : Open Source Chart Image API [QuickChart](https://quickchart.io/documentation/reference/line-style) 활용
+  - [작성 예시: 실습-한국 코로나19 감염 추이](/python/quick-chart/#실습--한국-코로나19-감염-추이)
 - 자동화: 작업 스케줄러 설정(Windows Task Scheduler python script)
 
 ### 기능구조
